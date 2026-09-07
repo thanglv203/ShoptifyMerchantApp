@@ -39,7 +39,8 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
-  async embed(text: string, _taskType: EmbeddingTaskType): Promise<number[]> {
+  async embed(text: string, taskType: EmbeddingTaskType): Promise<number[]> {
+    void taskType;
     const input = text.trim();
     if (!input) throw new PermanentError("Không thể embedding text rỗng");
 

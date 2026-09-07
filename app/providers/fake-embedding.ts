@@ -35,7 +35,8 @@ export class FakeEmbeddingProvider implements EmbeddingProvider {
 
   constructor(readonly dimension = EMBEDDING_DIMENSION) {}
 
-  async embed(text: string, _taskType: EmbeddingTaskType): Promise<number[]> {
+  async embed(text: string, taskType: EmbeddingTaskType): Promise<number[]> {
+    void taskType;
     const tokens = tokenize(text);
     if (tokens.length === 0) {
       throw new PermanentError("Không thể embedding text rỗng");

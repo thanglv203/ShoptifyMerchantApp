@@ -16,6 +16,10 @@ export async function getShopByDomain(domain: string) {
   return prisma.shop.findUnique({ where: { domain } });
 }
 
+export async function getShopById(id: string) {
+  return prisma.shop.findUnique({ where: { id } });
+}
+
 export async function markShopSynced(shopId: string, at: Date = new Date()) {
   return prisma.shop.update({
     where: { id: shopId },

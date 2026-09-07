@@ -137,7 +137,8 @@ export type UpsertProductInput = {
   variantsTruncated: boolean;
 };
 
-export type UpsertResult = "created" | "updated" | "skipped";
+export type UpsertAction = "created" | "updated" | "skipped";
+export type UpsertResult = { action: UpsertAction; productId: string };
 
 /**
  * Guard chống ghi đè bằng dữ liệu CŨ HƠN (webhook lệch thứ tự / retry chậm /
@@ -182,7 +183,7 @@ export async function upsertProductFromShopify(
       existing &&
       shouldSkipUpdate(existing.shopifyUpdatedAt, incomingUpdatedAt)
     ) {
-      return "skipped";
+      return { action: "skipped", productId: existing.id };
     }
 
     const data = {
@@ -227,7 +228,10 @@ export async function upsertProductFromShopify(
       });
     }
 
-    return existing ? "updated" : "created";
+    return {
+      action: existing ? "updated" : "created",
+      productId: product.id,
+    };
   });
 }
 

@@ -4,9 +4,12 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
+import { jobQueue } from "../jobs/queue.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
+  // Khởi động worker khi app được mở; job pg-boss tồn tại sẽ tiếp tục sau process restart.
+  await jobQueue.start();
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
@@ -19,7 +22,6 @@ export default function App() {
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app">Home</s-link>
-        <s-link href="/app/additional">Additional page</s-link>
         <s-link href="/app/products">Products</s-link>
       </s-app-nav>
       <Outlet />

@@ -14,7 +14,6 @@
  * `selectedOptions` (mỗi option là 1 object × 20 variants × 25 products sẽ vượt trần);
  * variant.title đã chứa option values ("Đen / M").
  */
-import prisma from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { getEnv } from "../lib/env.server";
 import { logger } from "../lib/logger.server";
@@ -22,7 +21,7 @@ import { errorMessage } from "../lib/errors";
 import { ShopifyClient } from "../providers/shopify-api.server";
 import { mapProductNode, type ShopifyProductNode } from "./product-mapper";
 import { upsertProductFromShopify } from "../repositories/product.repository";
-import { markShopSynced } from "../repositories/shop.repository";
+import { getShopById, markShopSynced } from "../repositories/shop.repository";
 import {
   checkpointSyncJob,
   completeSyncJob,
@@ -105,18 +104,20 @@ type ProductsCountData = { productsCount: { count: number } | null };
 /**
  * Chạy một SyncJob theo jobId. KHÔNG throw — mọi kết quả nằm trong bảng SyncJob.
  */
-export async function runSyncJob(jobId: string): Promise<void> {
+export async function runSyncJob(
+  jobId: string,
+): Promise<{ shopId: string } | null> {
   const log = logger.child({ module: "product-sync", jobId });
 
   const job = await getSyncJobRecord(jobId);
   if (!job) {
     log.error("SyncJob không tồn tại");
-    return;
+    return null;
   }
-  const shop = await prisma.shop.findUnique({ where: { id: job.shopId } });
+  const shop = await getShopById(job.shopId);
   if (!shop) {
     await failSyncJob(jobId, "Shop không tồn tại trong DB");
-    return;
+    return null;
   }
   const shopLog = log.child({ shop: shop.domain });
 
@@ -132,7 +133,8 @@ export async function runSyncJob(jobId: string): Promise<void> {
 
     // Tổng số product (hiển thị tiến độ) — chỉ khi bắt đầu từ đầu, resume giữ nguyên.
     if (job.processedCount === 0) {
-      const { data } = await client.request<ProductsCountData>(PRODUCTS_COUNT_QUERY);
+      const { data } =
+        await client.request<ProductsCountData>(PRODUCTS_COUNT_QUERY);
       const total = data.productsCount?.count;
       if (typeof total === "number") await setSyncJobTotal(jobId, total);
       shopLog.info({ total }, "bắt đầu full sync");
@@ -168,8 +170,8 @@ export async function runSyncJob(jobId: string): Promise<void> {
           );
         }
         const result = await upsertProductFromShopify(job.shopId, input);
-        if (result === "created") created += 1;
-        else if (result === "updated") updated += 1;
+        if (result.action === "created") created += 1;
+        else if (result.action === "updated") updated += 1;
         else skipped += 1;
       }
 
@@ -198,13 +200,21 @@ export async function runSyncJob(jobId: string): Promise<void> {
     await markShopSynced(job.shopId);
     await completeSyncJob(jobId);
     shopLog.info("sync COMPLETED");
+    return { shopId: job.shopId };
   } catch (err) {
     const message = errorMessage(err);
-    shopLog.error({ err: message }, "sync FAILED — cursor đã checkpoint, có thể Resume");
+    shopLog.error(
+      { err: message },
+      "sync FAILED — cursor đã checkpoint, có thể Resume",
+    );
     try {
       await failSyncJob(jobId, message);
     } catch (updateErr) {
-      shopLog.error({ err: errorMessage(updateErr) }, "không ghi được trạng thái FAILED");
+      shopLog.error(
+        { err: errorMessage(updateErr) },
+        "không ghi được trạng thái FAILED",
+      );
     }
+    return null;
   }
 }

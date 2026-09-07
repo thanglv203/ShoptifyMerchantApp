@@ -1,4 +1,5 @@
 import { errorMessage, isPermanentError } from "../lib/errors";
+import { jobQueue } from "../jobs/queue.server";
 import { logger } from "../lib/logger.server";
 import {
   softDeleteProductByShopifyId,
@@ -85,16 +86,22 @@ export async function handleProductWebhook(
 
     const product = mapProductWebhookPayload(input.payload);
     const result = await upsertProductFromShopify(shop.id, product);
+    if (result.action !== "skipped") {
+      await jobQueue.enqueue("embed-product", {
+        productId: result.productId,
+        shopId: shop.id,
+      });
+    }
     await completeWebhookEvent(claim.eventId, {
       shopId: shop.id,
-      skipped: result === "skipped",
+      skipped: result.action === "skipped",
     });
     log.info(
-      { productId: product.shopifyId, result },
+      { productId: product.shopifyId, result: result.action },
       `${topic.toLowerCase()} đã xử lý`,
     );
     return {
-      outcome: result === "skipped" ? "skipped" : "processed",
+      outcome: result.action === "skipped" ? "skipped" : "processed",
       retry: false,
     };
   } catch (error) {
