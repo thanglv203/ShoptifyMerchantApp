@@ -1,0 +1,183 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Shop {
+  id           String    @id @default(cuid())
+  domain       String    @unique
+  lastSyncedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  products      Product[]
+  syncJobs      SyncJob[]
+  webhookEvents WebhookEvent[]
+}
+
+model Product {
+  id               String    @id @default(cuid())
+  shopId           String
+  shopifyId        BigInt
+  gid              String
+  title            String
+  descriptionHtml  String?   @db.Text
+  vendor           String?
+  productType      String?
+  tags             String[]
+  status           String    @default("ACTIVE") // ACTIVE | ARCHIVED | DRAFT
+  handle           String?
+  imageUrl         String?
+  imageAlt         String?
+  price            Decimal?  @db.Decimal(14, 2)
+  currencyCode     String?
+  shopifyCreatedAt DateTime?
+  shopifyUpdatedAt DateTime?
+  syncedAt         DateTime  @default(now())
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  shop      Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  variants  Variant[]
+  embedding ProductEmbedding?
+
+  @@unique([shopId, shopifyId])
+  @@index([shopId, shopifyUpdatedAt])
+  @@index([shopId, deletedAt])
+}
+
+model Variant {
+  id                String   @id @default(cuid())
+  productId         String
+  shopifyId         BigInt
+  gid               String
+  title             String
+  sku               String?
+  price             Decimal  @db.Decimal(14, 2)
+  compareAtPrice    Decimal? @db.Decimal(14, 2)
+  inventoryQuantity Int?
+  position          Int?
+  options           Json?
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, shopifyId])
+}
+
+model ProductEmbedding {
+  id         String                      @id @default(cuid())
+  productId  String                      @unique
+  embedding  Unsupported("vector(768)")?
+  model      String
+  dimension  Int
+  version    Int                         @default(1)
+  dataHash   String
+  status     EmbeddingStatus             @default(PENDING)
+  error      String?
+  embeddedAt DateTime?
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+enum EmbeddingStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+model SyncJob {
+  id              String        @id @default(cuid())
+  shopId          String
+  status          SyncJobStatus @default(PENDING)
+  mode            SyncJobMode   @default(FULL)
+  activeLockKey   String?       @unique
+  cursor          String?
+  bulkOperationId String?
+  processedCount  Int           @default(0)
+  totalCount      Int?
+  error           String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+}
+
+enum SyncJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum SyncJobMode {
+  FULL
+  INCREMENTAL
+}
+
+model WebhookEvent {
+  id               String             @id @default(cuid())
+  webhookId        String             @unique
+  eventId          String?
+  shopDomain       String
+  shopId           String?
+  topic            String
+  resourceId       BigInt?
+  shopifyUpdatedAt DateTime?
+  status           WebhookEventStatus @default(RECEIVED)
+  error            String?
+  receivedAt       DateTime           @default(now())
+  processedAt      DateTime?
+
+  shop Shop? @relation(fields: [shopId], references: [id], onDelete: SetNull)
+
+  @@index([shopDomain, topic, receivedAt])
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  SKIPPED
+  FAILED
+}

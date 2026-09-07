@@ -1,0 +1,24 @@
+#
+#   docker compose up -d db          # bật DB
+#   docker compose logs -f db        # xem log
+#   docker compose down -v           # xoá cả dữ liệu (reset)
+services:
+  db:
+    image: pgvector/pgvector:pg17 # PostgreSQL 17 đã cài sẵn extension vector
+    container_name: svs-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 203201
+      POSTGRES_DB: shopifyapp
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d shopifyapp" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
