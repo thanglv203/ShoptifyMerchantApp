@@ -41,6 +41,7 @@ const envSchema = z.object({
   GEMINI_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
   OLLAMA_BASE_URL: z.string().url().default("http://localhost:11434"),
   OLLAMA_EMBEDDING_MODEL: z.string().default("bge-m3"),
+  EVAL_SHOP_DOMAIN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
