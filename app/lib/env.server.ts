@@ -26,6 +26,19 @@ const envSchema = z.object({
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   SYNC_PAGE_SIZE: z.coerce.number().int().min(1).max(250).default(50),
+
+  // Embedding — vector 768 chiều.
+  EMBEDDING_PROVIDER: z.enum(["fake", "gemini", "ollama"]).default("fake"),
+  EMBEDDING_DIMENSION: z.coerce
+    .number()
+    .int()
+    .refine((value) => value === 768, "EMBEDDING_DIMENSION must be 768")
+    .default(768),
+  EMBEDDING_VERSION: z.coerce.number().int().min(1).default(1),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
+  OLLAMA_BASE_URL: z.string().url().default("http://localhost:11434"),
+  OLLAMA_EMBEDDING_MODEL: z.string().default("bge-m3"),
 });
 
 export type Env = z.infer<typeof envSchema>;
