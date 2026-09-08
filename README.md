@@ -11,12 +11,14 @@ Shopify → Admin GraphQL API → Product Sync → PostgreSQL → Embedding → 
 ​
 ### Requirements
 ​
+- Git
 - Node.js `>=22.12`
 - npm
 - Docker Desktop hoặc Docker Engine + Compose
 - Shopify CLI 4.x
 - Shopify Partner/Dev Dashboard account
-- Development store
+- Development store.
+
 ​
 Cài Shopify CLI nếu chưa có:
 ​
@@ -54,6 +56,7 @@ npm run setup
 ​
 Cần hai terminal.
 ​
+
 Terminal 1 — Shopify app:
 ​
 ```bash
@@ -68,14 +71,28 @@ npm run worker:dev
 ​
 Nếu worker chưa chạy, Sync vẫn tạo job trong PostgreSQL nhưng job sẽ chờ và chưa được xử lý.
 ​
+
+#### Shopify end-to-end 
+​
+1. Tạo/chọn development store và bảo đảm store có Product; nếu cần catalog lớn, chạy seed tùy chọn.
+2. Chạy PostgreSQL và migration.
+3. Chạy `npm run dev`.
+4. Chạy `npm run worker:dev` ở terminal khác.
+5. Cài/mở app trong Shopify Admin.
+6. Bấm **Sync Products**.
+7. Chờ sync hoàn thành và embedding chuyển thành `READY`.
+8. Mở Products để xác nhận dữ liệu đã được ghi từ Shopify vào PostgreSQL.
+9. Mở Search và thử truy vấn, ví dụ `áo nam màu đen dưới 500k`.
+
+
 ### Production-like bằng Docker Compose
 ​
 Sau khi điền đầy đủ `.env`:
 ​
 ```bash
+docker compose config
 docker compose up --build -d
 docker compose ps -a
-docker compose logs -f app worker
 ```
 ​
 Compose chạy theo thứ tự:
@@ -92,6 +109,9 @@ Kiểm tra app:
 curl http://localhost:3000/healthz
 ```
 ​
+`SHOPIFY_APP_URL=http://localhost:3000` chỉ phù hợp cho smoke test. Để mở embedded app trong Shopify Admin khi chạy full Compose, cần public HTTPS tunnel trỏ tới `http://localhost:3000`, sau đó cập nhật App URL và redirect URLs trong Shopify Dev Dashboard.
+
+
 Dừng nhưng giữ database:
 ​
 ```bash
@@ -106,6 +126,7 @@ docker compose down -v
 ​
 ## 2. Configuration
 ​
+Copy `.env.example` thành `.env`.
 ​
 ### Shopify và database
 ​
@@ -136,20 +157,16 @@ docker compose down -v
 | `OLLAMA_EMBEDDING_MODEL` | Không               | `bge-m3`                   | Ollama embedding model                                |
 | `EVAL_SHOP_DOMAIN`       | Khi chạy evaluation | `your-store.myshopify.com` | Shop dùng cho sáu query evaluation                    |
 ​
-### Seed data
-​
-| Biến                      | Bắt buộc | Mặc định  | Mô tả                                          |
-| ------------------------- | -------- | --------- | ---------------------------------------------- |
-| `SEED_SHOP_DOMAIN`        | Khi seed | —         | Development store domain                       |
-| `SEED_ADMIN_ACCESS_TOKEN` | Khi seed | —         | Token của custom app riêng có `write_products` |
-| `SEED_COUNT`              | Không    | `300`     | Số Product mẫu                                 |
-| `SEED_API_VERSION`        | Không    | `2026-07` | Shopify Admin API version của seed script      |
-​
+
+
 Cấu hình tối thiểu để reviewer chạy offline:
 ​
 ```env
+SHOPIFY_API_KEY=m9-test-key
+SHOPIFY_API_SECRET=m9-test-secret
+SHOPIFY_APP_URL=http://localhost:3000
 SCOPES=read_products
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/shopify_vector_search?schema=public
+DATABASE_URL=
 EMBEDDING_PROVIDER=fake
 EMBEDDING_DIMENSION=768
 EMBEDDING_VERSION=2
@@ -157,6 +174,52 @@ EMBEDDING_BATCH_SIZE=50
 EMBEDDING_CONCURRENCY=5
 ```
 ​
+Khi chạy trong container, `docker-compose.yml` phải override `DATABASE_URL` để dùng hostname `db` thay vì `localhost`.
+
+### Seed Product lên Shopify development store — tùy chọn
+​
+> Nếu development store đã có Product, bỏ qua toàn bộ bước seed.
+​
+| Biến | Bắt buộc | Mặc định | Mô tả |
+| --- | --- | --- | --- |
+| `SEED_SHOP_DOMAIN` | Khi seed | — | Development store domain |
+| `SEED_ADMIN_ACCESS_TOKEN` | Khi seed | — | Token của custom app riêng có `write_products` |
+| `SEED_COUNT` | Không | `300` | Số Product mẫu |
+| `SEED_API_VERSION` | Không | `2026-07` | Shopify Admin API version của seed script |
+
+App chính chỉ có `read_products`. Token `write_products` chỉ thuộc custom app dùng cho seed trên development store và không được commit.
+​
+Xem trước dữ liệu:
+​
+```bash
+npm run seed:dry
+```
+​
+Tạo Product trên Shopify:
+​
+```bash
+npm run seed
+```
+​
+Sau khi seed hoàn tất:
+​
+1. Chạy app và worker.
+2. Cài/mở app trong đúng development store.
+3. Bấm **Sync Products**.
+4. Chờ `SyncJob` chuyển thành `COMPLETED`.
+5. Chờ `ProductEmbedding` chuyển thành `READY`.
+6. Mở trang Search và chạy truy vấn thử.
+​
+```text
+npm run seed
+→ Product trên Shopify
+→ Sync Products
+→ Product/Variant trong PostgreSQL
+→ embed-shop
+→ ProductEmbedding READY
+→ Semantic Search
+```
+
 ## 3. Shopify Setup
 ​
 1. Mở Shopify Dev Dashboard và tạo development store.
@@ -199,27 +262,7 @@ uri = "/webhooks/products"
 
 App không cập nhật Product lên Shopify nên không cần `write_products`. Không sử dụng order/customer nên không xin `read_orders` hoặc `read_customers`.
 
-### Seed catalog lớn
 
-App chính chỉ có `read_products`, vì vậy seed script cần token của **custom app riêng** trong development store:
-
-1. Shopify Admin → Settings → Apps and sales channels.
-2. Develop apps → Create an app.
-3. Cấp `write_products`.
-4. Install app và lấy Admin API access token.
-5. Điền `SEED_SHOP_DOMAIN` và `SEED_ADMIN_ACCESS_TOKEN` vào `.env`.
-
-Xem trước dữ liệu:
-
-```bash
-npm run seed:dry
-```
-
-Tạo product:
-
-```bash
-npm run seed
-```
 ​
 ## 4. Database
 ​
@@ -293,6 +336,8 @@ export interface EmbeddingProvider {
 | Fake     | `fake-feature-hash-v2` |                                 768 | Test/dev deterministic và offline          |
 | Ollama   | `bge-m3`               | 1024 → lấy 768 chiều đầu, normalize | Fallback local miễn phí                    |
 ​
+
+
 Provider được chọn qua `EMBEDDING_PROVIDER` và factory:
 ​
 ​
