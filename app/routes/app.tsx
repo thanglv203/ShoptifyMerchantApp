@@ -4,12 +4,10 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
-import { jobQueue } from "../jobs/queue.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
   // Khởi động worker khi app được mở; job pg-boss tồn tại sẽ tiếp tục sau process restart.
-  await jobQueue.start();
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };

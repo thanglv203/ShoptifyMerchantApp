@@ -5,17 +5,22 @@ import { logger } from "../lib/logger.server";
 import { jobSingletonKey, type JobName, type JobPayloads } from "./job-types";
 
 export interface JobQueue {
+  /** Khởi động publisher để app có thể gửi job; KHÔNG đăng ký consumer. */
   start(): Promise<void>;
+  /** Chỉ gọi trong process worker độc lập. */
+  startWorker(): Promise<void>;
+  stop(): Promise<void>;
   enqueue<N extends JobName>(name: N, payload: JobPayloads[N]): Promise<void>;
 }
 
 class PgBossQueue implements JobQueue {
   private boss: PgBoss | undefined;
   private startPromise: Promise<void> | undefined;
+  private workerPromise: Promise<void> | undefined;
 
   start(): Promise<void> {
     if (!this.startPromise) {
-      this.startPromise = this.initialize().catch((error) => {
+      this.startPromise = this.initializePublisher().catch((error) => {
         this.startPromise = undefined;
         throw error;
       });
@@ -23,7 +28,7 @@ class PgBossQueue implements JobQueue {
     return this.startPromise;
   }
 
-  private async initialize(): Promise<void> {
+  private async initializePublisher(): Promise<void> {
     try {
       const boss = new PgBoss(getEnv().DATABASE_URL);
       this.boss = boss;
@@ -52,41 +57,69 @@ class PgBossQueue implements JobQueue {
         retryBackoff: true,
         heartbeatSeconds: 60,
       });
-
-      const handlers = await import("./handlers.server");
-      await boss.work("sync-products", async ([job]) => {
-        try {
-          const completed = await handlers.handleSyncProductsJob(
-            job.data as JobPayloads["sync-products"],
-          );
-          if (completed) await this.enqueue("embed-shop", completed);
-        } catch (error) {
-          logger.error(
-            { jobId: job.id, err: errorMessage(error) },
-            "sync-products handler crashed",
-          );
-          throw error;
-        }
-      });
-      await boss.work("embed-product", async ([job]) => {
-        await handlers.handleEmbedProductJob(
-          job.data as JobPayloads["embed-product"],
-          job.id,
-        );
-      });
-      await boss.work("embed-shop", async ([job]) => {
-        await handlers.handleEmbedShopJob(
-          job.data as JobPayloads["embed-shop"],
-          job.id,
-        );
-      });
-      logger.info("pg-boss started: sync-products, embed-product, embed-shop");
+      logger.info("pg-boss publisher started");
     } catch (error) {
       this.boss = undefined;
-      throw new TransientError("Không khởi động được pg-boss", {
+      throw new TransientError("Không khởi động được pg-boss publisher", {
         cause: error,
       });
     }
+  }
+
+  startWorker(): Promise<void> {
+    if (!this.workerPromise) {
+      this.workerPromise = this.initializeWorker().catch((error) => {
+        this.workerPromise = undefined;
+        throw error;
+      });
+    }
+    return this.workerPromise;
+  }
+
+  private async initializeWorker(): Promise<void> {
+    await this.start();
+    const boss = this.boss!;
+    const handlers = await import("./handlers.server");
+
+    await boss.work("sync-products", async ([job]) => {
+      try {
+        const completed = await handlers.handleSyncProductsJob(
+          job.data as JobPayloads["sync-products"],
+        );
+        if (completed) await this.enqueue("embed-shop", completed);
+      } catch (error) {
+        logger.error(
+          { jobId: job.id, err: errorMessage(error) },
+          "sync-products handler crashed",
+        );
+        throw error;
+      }
+    });
+    await boss.work("embed-product", async ([job]) => {
+      await handlers.handleEmbedProductJob(
+        job.data as JobPayloads["embed-product"],
+        job.id,
+      );
+    });
+    await boss.work("embed-shop", async ([job]) => {
+      await handlers.handleEmbedShopJob(
+        job.data as JobPayloads["embed-shop"],
+        job.id,
+      );
+    });
+    logger.info(
+      "pg-boss worker started: sync-products, embed-product, embed-shop",
+    );
+  }
+
+  async stop(): Promise<void> {
+    if (!this.boss) return;
+    const boss = this.boss;
+    this.boss = undefined;
+    this.startPromise = undefined;
+    this.workerPromise = undefined;
+    await boss.stop();
+    logger.info("pg-boss stopped");
   }
 
   async enqueue<N extends JobName>(

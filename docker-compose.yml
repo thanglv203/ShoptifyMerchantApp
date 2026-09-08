@@ -1,24 +1,80 @@
-#
-#   docker compose up -d db          # bật DB
-#   docker compose logs -f db        # xem log
-#   docker compose down -v           # xoá cả dữ liệu (reset)
 services:
   db:
-    image: pgvector/pgvector:pg17 # PostgreSQL 17 đã cài sẵn extension vector
+    image: pgvector/pgvector:pg17
     container_name: svs-db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 203201
       POSTGRES_DB: shopifyapp
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d shopifyapp" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shopifyapp"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:203201@db:5432/shopifyapp?schema=public
+    command: ["npm", "run", "db:migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:203201@db:5432/shopifyapp?schema=public
+      HOST: 0.0.0.0
+      PORT: 3000
+    command: ["npm", "run", "start"]
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:203201@db:5432/shopifyapp?schema=public
+    command: ["npm", "run", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 35s
+    restart: unless-stopped
 
 volumes:
   pgdata:

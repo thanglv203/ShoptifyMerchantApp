@@ -58,3 +58,13 @@ Thumbs.db
 .gemini
 AGENTS.md
 CLAUDE.md
+
+# Local model/database artifacts (không push lên GitHub)
+.ollama/
+models/
+pgdata/
+postgres-data/
+*.log
+
+# Vitest / coverage
+coverage/

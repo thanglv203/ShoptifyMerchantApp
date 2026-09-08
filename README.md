@@ -44,11 +44,6 @@ npm ci
 cp .env.example .env
 ```
 ​
-PowerShell:
-​
-```powershell
-Copy-Item .env.example .env
-```
 ​
 Khởi động PostgreSQL và chạy migration:
 ​
@@ -176,35 +171,55 @@ Có thể link lại app bằng:
 npm run config:link
 ```
 ​
-Project chỉ yêu cầu scope tối thiểu:
-​
+### App configuration
+
+`shopify.app.toml` sử dụng:
+
 ```toml
 [access_scopes]
 scopes = "read_products"
-```
-​
-Webhook configuration:
-​
-```toml
+
 [webhooks]
 api_version = "2026-07"
-​
-[[webhooks.subscriptions]]
-topics = ["app/uninstalled"]
-uri = "/webhooks/app/uninstalled"
-​
-[[webhooks.subscriptions]]
-topics = ["app/scopes_update"]
-uri = "/webhooks/app/scopes_update"
-​
+
 [[webhooks.subscriptions]]
 topics = ["products/create", "products/update", "products/delete"]
 uri = "/webhooks/products"
 ```
-​
-​
-Khi chạy `npm run dev`, Shopify CLI tự tạo HTTPS tunnel và cập nhật app/callback URLs. 
-Khi chạy app hoàn toàn trong Docker, cần tự tạo public HTTPS tunnel trỏ tới `http://localhost:3000`, đặt URL đó vào `SHOPIFY_APP_URL` và cập nhật App URL/redirect URL trong Shopify Dashboard.
+
+`ApiVersion.July26` trong `app/shopify.server.ts` phải khớp `api_version = "2026-07"`.
+
+### Vì sao chỉ dùng `read_products`?
+
+Ứng dụng hiện chỉ đọc Product từ Shopify và lưu vào database riêng. Scope này đủ cho:
+
+- Product và ProductVariant
+- Product media
+- Product webhook subscriptions
+
+App không cập nhật Product lên Shopify nên không cần `write_products`. Không sử dụng order/customer nên không xin `read_orders` hoặc `read_customers`.
+
+### Seed catalog lớn
+
+App chính chỉ có `read_products`, vì vậy seed script cần token của **custom app riêng** trong development store:
+
+1. Shopify Admin → Settings → Apps and sales channels.
+2. Develop apps → Create an app.
+3. Cấp `write_products`.
+4. Install app và lấy Admin API access token.
+5. Điền `SEED_SHOP_DOMAIN` và `SEED_ADMIN_ACCESS_TOKEN` vào `.env`.
+
+Xem trước dữ liệu:
+
+```bash
+npm run seed:dry
+```
+
+Tạo product:
+
+```bash
+npm run seed
+```
 ​
 ## 4. Database
 ​
@@ -214,6 +229,20 @@ Project dùng PostgreSQL 17 và extension pgvector qua Docker image:
 pgvector/pgvector:pg17
 ```
 ​
+Khởi động PostgreSQL + pgvector:
+
+```bash
+docker compose up -d db
+docker compose ps
+docker compose logs -f db
+```
+
+Docker image:
+
+```text
+pgvector/pgvector:pg17
+```
+
 Prisma 6 quản lý relational schema. Migration đầu tiên bật pgvector trước khi tạo cột vector:
 ​
 ```sql
@@ -227,7 +256,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 | `Product`          | Bản sao Shopify Product          | `@@unique([shopId, shopifyId])`    |
 | `Variant`          | Product variants                 | `@@unique([productId, shopifyId])` |
 | `ProductEmbedding` | Vector và embedding metadata     | `productId @unique`                |
-| `SyncJob`          | Trạng thái, checkpoint và resume | `activeLockKey @unique`            |
+| `SyncJob`          | Tiến độ/checkpoint sync          | `activeLockKey @unique`            |
 | `WebhookEvent`     | Audit và delivery dedupe         | `webhookId @unique`                |
 ​
 Các lệnh database:
