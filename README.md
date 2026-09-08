@@ -178,8 +178,9 @@ Khi chạy trong container, `docker-compose.yml` phải override `DATABASE_URL` 
 
 ### Seed Product lên Shopify development store — tùy chọn
 ​
-> Nếu development store đã có Product, bỏ qua toàn bộ bước seed.
+ Nếu development store đã có Product, bỏ qua toàn bộ bước seed.
 ​
+
 | Biến | Bắt buộc | Mặc định | Mô tả |
 | --- | --- | --- | --- |
 | `SEED_SHOP_DOMAIN` | Khi seed | — | Development store domain |

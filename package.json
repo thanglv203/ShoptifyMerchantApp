@@ -7,7 +7,7 @@
     "build:web": "react-router build",
     "build:worker": "vite build --config vite.worker.config.ts",
     "dev": "shopify app dev",
-    "worker:dev": "tsx tsx --env-file=.env scripts/start-worker.ts",
+    "worker:dev": "tsx --env-file=.env scripts/start-worker.ts",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
